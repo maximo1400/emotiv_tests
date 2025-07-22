@@ -1,0 +1,7 @@
+websocket-client
+python-dispatch
+pandas
+scipy
+matplotlib
+seaborn
+black

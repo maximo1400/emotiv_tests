@@ -220,3 +220,10 @@ Temp/
 unity/*.userprefs
 unity/*.unityproj
 *build-*
+python/file.py
+python/sub_data/*
+
+python/emotional_metrics_timeseries.png
+python/valence_activation_methods_comparison.png
+python/valence_activation_plot.png
+

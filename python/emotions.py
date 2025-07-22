@@ -195,8 +195,9 @@ def calculate_valence_dominance_activation(df: pd.DataFrame, eeg_config=EEG_CONF
     results["activation_beta_combined"] = np.mean(beta_combined_activities, axis=0)
 
     # Primary activation measure (combined beta for robustness)
-    results["activation_combined"] = results["activation_beta_combined"]
-    results["activation"] = results["activation_beta_low"]
+    results["activation"] = results["activation_beta_combined"]
+
+    # Activation by reversed frontal log
 
     return results
 
@@ -480,6 +481,243 @@ def plot_time_series(vda_results, save_plot=True):
     plt.show()
 
 
+def plot_valence_activation_methods(vda_results, save_plot=True, dominance_is_size=True, bin_size=1):
+    """
+    Create a scatter plot showing all valence and activation calculation methods with different colors
+    """
+    # Define the methods we want to plot
+    # valence_methods = ["valence_standard", "valence_normalized", "valence_ratio", "valence_ratio_norm"]
+    valence_methods = ["valence_normalized", "valence_ratio_norm", "valence"]
+    # activation_methods = ["activation_beta_low", "activation_beta_high", "activation_beta_combined"]
+    activation_methods = ["activation_beta_low", "activation"]
+
+    # Check if methods exist in results
+    available_valence = [method for method in valence_methods if method in vda_results]
+    available_activation = [method for method in activation_methods if method in vda_results]
+
+    # Define colors for different combinations
+    # colors = ["blue", "red", "green", "orange", "purple", "brown", "pink", "gray", "olive", "cyan"]
+    # colors = list(plt.cm.tab20.colors)
+    colors = list(plt.cm.Paired.colors)
+    markers = ["o", "s", "^", "D", "v", "<", ">", "p", "*", "h"]
+
+    # Create the plot
+    plt.figure(figsize=(14, 10))
+
+    dominance = vda_results["dominance"]
+
+    # Apply binning to dominance
+    n_points = len(dominance)
+    n_bins = n_points // bin_size
+    dominance_binned = []
+
+    for i in range(n_bins):
+        start_idx = i * bin_size
+        end_idx = start_idx + bin_size
+        dominance_binned.append(np.mean(dominance[start_idx:end_idx]))
+
+    dominance = np.array(dominance_binned)
+
+    # Calculate sizes for dominance
+    sizes = 50
+    if dominance_is_size:
+        dom_min, dom_max = np.min(dominance), np.max(dominance)
+        if dom_max != dom_min:
+            sizes = 10 + 100 * (dominance - dom_min) / (dom_max - dom_min)
+
+    # Plot all combinations
+    plot_idx = 0
+    all_valence = []
+    all_activation = []
+    custom_legend_elements = []
+
+    for v_method in available_valence:
+        for a_method in available_activation:
+            if plot_idx >= len(colors):
+                break
+
+            # Get data
+            valence_data = vda_results[v_method]
+            activation_data = vda_results[a_method]
+
+            # Apply binning
+            valence_binned = []
+            activation_binned = []
+
+            for i in range(n_bins):
+                start_idx = i * bin_size
+                end_idx = start_idx + bin_size
+                valence_binned.append(np.mean(valence_data[start_idx:end_idx]))
+                activation_binned.append(np.mean(activation_data[start_idx:end_idx]))
+
+            valence_binned = np.array(valence_binned)
+            activation_binned = np.array(activation_binned)
+
+            # Store for axis limits calculation
+            all_valence.extend(valence_binned)
+            all_activation.extend(activation_binned)
+
+            # Create scatter plot
+            color = colors[plot_idx]
+            marker = markers[plot_idx % len(markers)]
+
+            # Create cleaner label
+            v_label = v_method.replace("valence_", "").replace("_", " ").title()
+            a_label = a_method.replace("activation_", "").replace("_", " ").title()
+            label = f"{v_label} + {a_label}"
+
+            plt.scatter(
+                valence_binned,
+                activation_binned,
+                alpha=0.6,
+                s=sizes,
+                c=color,
+                marker=marker,
+                edgecolors="black",
+                linewidth=0.3,
+                # label=f"{v_method.replace('valence_', 'V:')} + {a_method.replace('activation_', 'A:')}",
+                # label=label,
+            )
+            custom_legend_elements.append(
+                plt.Line2D(
+                    [0],
+                    [0],
+                    marker=marker,
+                    color="w",
+                    markerfacecolor=color,
+                    markersize=8,
+                    markeredgecolor="black",
+                    markeredgewidth=0.3,
+                    label=label,
+                )
+            )
+            plot_idx += 1
+
+    print(f"Plotted {plot_idx} method combinations")
+    print(f"Reduced from {n_points} to {len(dominance)} points per method")
+
+    # Convert to numpy arrays for axis calculations
+    all_valence = np.array(all_valence)
+    all_activation = np.array(all_activation)
+
+    # Add reference lines
+    plt.axhline(y=0, color="black", linestyle="-", alpha=0.8, linewidth=2, label="Zero line")
+    plt.axvline(x=0, color="black", linestyle="-", alpha=0.8, linewidth=2)
+    plt.axhline(y=np.mean(all_activation), color="red", linestyle="--", alpha=0.6, linewidth=1, label="Overall mean")
+    plt.axvline(x=np.mean(all_valence), color="red", linestyle="--", alpha=0.6, linewidth=1)
+
+    # Force (0,0) as the visual center
+    x_absmax = max(abs(np.min(all_valence)), abs(np.max(all_valence)), 0.1) * 1.1
+    y_absmax = max(abs(np.min(all_activation)), abs(np.max(all_activation)), 0.1) * 1.1
+    axis_limit = max(x_absmax, y_absmax)
+    plt.xlim(-axis_limit, axis_limit)
+    plt.ylim(-axis_limit, axis_limit)
+
+    # Get current axis limits
+    x_range = plt.xlim()
+    y_range = plt.ylim()
+
+    # Add quadrant labels
+    plt.text(
+        x_range[1] * 0.8,
+        y_range[1] * 0.9,
+        "High Activation\nPositive Valence\n(Happy/Excited)",
+        ha="center",
+        va="center",
+        fontsize=9,
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgreen", alpha=0.7),
+    )
+
+    plt.text(
+        x_range[0] * 0.8,
+        y_range[1] * 0.9,
+        "High Activation\nNegative Valence\n(Angry/Stressed)",
+        ha="center",
+        va="center",
+        fontsize=9,
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="lightcoral", alpha=0.7),
+    )
+
+    plt.text(
+        x_range[1] * 0.8,
+        y_range[0] * 0.8,
+        "Low Activation\nPositive Valence\n(Calm/Relaxed)",
+        ha="center",
+        va="center",
+        fontsize=9,
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="lightblue", alpha=0.7),
+    )
+
+    plt.text(
+        x_range[0] * 0.8,
+        y_range[0] * 0.8,
+        "Low Activation\nNegative Valence\n(Sad/Depressed)",
+        ha="center",
+        va="center",
+        fontsize=9,
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgray", alpha=0.7),
+    )
+
+    # Customize the plot
+    plt.xlabel("Valence (Negative ← → Positive)", fontsize=12, fontweight="bold")
+    plt.ylabel("Activation (Low ← → High)", fontsize=12, fontweight="bold")
+    plt.title("EEG Emotional State: All Calculation Methods Comparison", fontsize=14, fontweight="bold")
+    plt.grid(True, alpha=0.3)
+
+    # Add statistics text
+    stats_text = f"Methods plotted: {plot_idx}\n"
+    stats_text += f"Points per method: {len(dominance)}\n"
+    stats_text += f"Valence range: [{np.min(all_valence):.3f}, {np.max(all_valence):.3f}]\n"
+    stats_text += f"Activation range: [{np.min(all_activation):.3f}, {np.max(all_activation):.3f}]\n"
+    stats_text += f"Dominance: μ={np.mean(dominance):.3f}, σ={np.std(dominance):.3f}"
+
+    plt.text(
+        0.02,
+        0.9,
+        stats_text,
+        transform=plt.gca().transAxes,
+        verticalalignment="top",
+        fontsize=9,
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.9),
+    )
+
+    # Add reference lines to legend
+    custom_legend_elements.append(plt.Line2D([0], [0], color="black", linestyle="-", label="Zero line"))
+    custom_legend_elements.append(plt.Line2D([0], [0], color="red", linestyle="--", label="Mean line"))
+
+    if dominance_is_size:
+        custom_legend_elements.append(
+            plt.Line2D([0], [0], marker="o", color="w", markerfacecolor="gray", markersize=8, label="Size ∝ Dominance")
+        )
+
+    # Create legend in the plot area
+    plt.legend(
+        handles=custom_legend_elements,
+        loc="upper right",
+        bbox_to_anchor=(1, 0.9),
+        fontsize=8,
+        framealpha=0.9,
+    )
+
+    plt.tight_layout()
+
+    if save_plot:
+        plt.savefig("valence_activation_methods_comparison.png", dpi=300, bbox_inches="tight")
+        print("Plot saved as 'valence_activation_methods_comparison.png'")
+
+    plt.show()
+
+    # Print method summary
+    print("\nMethod combinations plotted:")
+    plot_idx = 0
+    for v_method in available_valence:
+        for a_method in available_activation:
+            if plot_idx >= len(colors):
+                break
+            print(f"{plot_idx + 1}. {v_method} + {a_method} (Color: {colors[plot_idx]})")
+            plot_idx += 1
+
+
 def main():
     """Main function to process EEG data"""
     filename = rf"sub_data\virtual\pow.csv"
@@ -559,6 +797,7 @@ def main():
 
     plot_valence_activation(vda_results)
     plot_time_series(vda_results)
+    plot_valence_activation_methods(vda_results, bin_size=20)
     # plot_hjorth_parameters(hjorth_results)
 
 
